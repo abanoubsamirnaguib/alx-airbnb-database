@@ -7,6 +7,9 @@ This directory contains advanced SQL scripts for the AirBnB database project, fo
 ### joins_queries.sql
 Contains various SQL JOIN operations demonstrating different types of joins and their use cases.
 
+### subqueries.sql
+Contains advanced SQL subqueries including correlated subqueries, nested queries, and complex filtering operations.
+
 ## JOIN Queries Explained
 
 ### 1. INNER JOIN - Bookings with Users
@@ -40,21 +43,31 @@ SELECT u.*, b.* FROM "User" u FULL OUTER JOIN Booking b ON u.user_id = b.user_id
 3. **RIGHT JOIN**: Returns all records from the right table and matched records from the left table
 4. **FULL OUTER JOIN**: Returns all records from both tables, with NULLs for non-matching records
 
-## Query Performance Tips
+____________________________________
 
-- Always use appropriate indexes on JOIN columns
-- Consider the order of JOINs for optimal performance
-- Use WHERE clauses to filter results early
-- Consider using EXISTS instead of IN for subqueries
+## Subqueries Explained
 
-## Sample Data Requirements
+### 1. Properties with Average Rating > 4.0
+```sql
+SELECT p.* FROM Property p WHERE p.property_id IN (
+    SELECT r.property_id FROM Review r 
+    GROUP BY r.property_id HAVING AVG(r.rating) > 4.0
+)
+```
+**Purpose**: Finds properties that have received high ratings on average.
+**Type**: Subquery with IN operator and HAVING clause.
+**Use Case**: Identifying top-rated properties for promotional purposes.
 
-To test these queries effectively, ensure your database has:
-- Users with and without bookings
-- Properties with and without reviews
-- Various booking statuses
-- Multiple reviews per property (some properties)
+### 2. Users with More Than 3 Bookings (Correlated Subquery)
+```sql
+SELECT u.* FROM "User" u WHERE (
+    SELECT COUNT(*) FROM Booking b WHERE b.user_id = u.user_id
+) > 3
+```
+**Purpose**: Identifies frequent customers who have made multiple bookings.
+**Type**: Correlated subquery that references the outer query.
+**Use Case**: Customer loyalty programs and targeted marketing.
 
-## Running the Queries
+____________________________________
 
-Execute the queries in order, or run individual queries as needed. Make sure the database schema is properly set up before running these queries.
+
