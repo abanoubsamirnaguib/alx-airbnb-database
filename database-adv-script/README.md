@@ -10,6 +10,9 @@ Contains various SQL JOIN operations demonstrating different types of joins and 
 ### subqueries.sql
 Contains advanced SQL subqueries including correlated subqueries, nested queries, and complex filtering operations.
 
+### aggregations_and_window_functions.sql
+Contains SQL aggregation functions with GROUP BY clauses and window functions for ranking and analytical operations.
+
 ## JOIN Queries Explained
 
 ### 1. INNER JOIN - Bookings with Users
@@ -68,6 +71,50 @@ SELECT u.* FROM "User" u WHERE (
 **Type**: Correlated subquery that references the outer query.
 **Use Case**: Customer loyalty programs and targeted marketing.
 
-____________________________________
+## Subquery Types and Performance
+
+1. **Simple Subqueries**: Independent queries that can be executed separately
+2. **Correlated Subqueries**: Reference columns from the outer query, executed once per outer row
+3. **EXISTS Subqueries**: Check for existence of matching records, often more efficient than IN
+4. **Scalar Subqueries**: Return single values, useful in SELECT and WHERE clauses
+
+## Performance Considerations
+
+- Correlated subqueries can be expensive as they execute for each outer row
+- Consider using JOINs instead of subqueries when possible for better performance
+- EXISTS is often faster than IN for large datasets
+- Use appropriate indexes on columns used in subquery conditions
+
+## Aggregations and Window Functions Explained
+
+### 1. Total Bookings per User (COUNT with GROUP BY)
+```sql
+SELECT u.user_id, u.first_name, u.last_name, COUNT(b.booking_id) AS total_bookings
+FROM "User" u LEFT JOIN Booking b ON u.user_id = b.user_id
+GROUP BY u.user_id, u.first_name, u.last_name
+```
+**Purpose**: Counts total bookings made by each user, including users with zero bookings.
+**Type**: Aggregation function with GROUP BY clause.
+**Use Case**: Customer activity analysis and user engagement metrics.
+
+### 2. Property Rankings by Booking Count (Window Functions)
+```sql
+SELECT p.*, COUNT(b.booking_id) AS total_bookings,
+       ROW_NUMBER() OVER (ORDER BY COUNT(b.booking_id) DESC) AS row_number_rank,
+       RANK() OVER (ORDER BY COUNT(b.booking_id) DESC) AS rank_position
+FROM Property p LEFT JOIN Booking b ON p.property_id = b.property_id
+GROUP BY p.property_id
+```
+**Purpose**: Ranks properties based on popularity (total bookings).
+**Type**: Window functions for ranking analysis.
+**Use Case**: Identifying top-performing properties and market analysis.
+
+## Window Functions vs Aggregations
+
+1. **Aggregation Functions**: Reduce multiple rows to single summary values (COUNT, SUM, AVG)
+2. **Window Functions**: Perform calculations across related rows without collapsing them
+3. **ROW_NUMBER()**: Assigns unique sequential numbers, no ties
+4. **RANK()**: Assigns same rank to ties, skips subsequent ranks
+5. **DENSE_RANK()**: Assigns same rank to ties, doesn't skip subsequent ranks
 
 
