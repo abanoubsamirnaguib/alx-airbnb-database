@@ -117,3 +117,118 @@ CREATE INDEX idx_property_description_gin ON Property USING gin(to_tsvector('eng
 
 -- For review comment searches
 CREATE INDEX idx_review_comment_gin ON Review USING gin(to_tsvector('english', comment));
+
+-- =====================================================
+-- PERFORMANCE TESTING - BEFORE AND AFTER INDEXES
+-- =====================================================
+-- Run these queries BEFORE creating the indexes to establish baseline performance
+
+-- Test Query 1: Booking search with date range and status
+EXPLAIN ANALYZE
+SELECT b.booking_id, b.start_date, b.end_date, b.total_price, b.status,
+       u.first_name, u.last_name, u.email
+FROM Booking b
+INNER JOIN "User" u ON b.user_id = u.user_id
+WHERE b.start_date >= '2024-01-01' 
+AND b.end_date <= '2024-12-31'
+AND b.status = 'confirmed'
+ORDER BY b.start_date;
+
+-- Test Query 2: Properties by location and price range
+EXPLAIN ANALYZE
+SELECT p.property_id, p.name, p.location, p.pricepernight,
+       h.first_name || ' ' || h.last_name AS host_name
+FROM Property p
+INNER JOIN "User" h ON p.host_id = h.user_id
+WHERE p.location LIKE '%New York%' 
+AND p.pricepernight BETWEEN 100 AND 300
+ORDER BY p.pricepernight;
+
+-- Test Query 3: Properties with high average ratings
+EXPLAIN ANALYZE
+SELECT p.property_id, p.name, p.location,
+       AVG(r.rating) as avg_rating,
+       COUNT(r.review_id) as review_count
+FROM Property p
+INNER JOIN Review r ON p.property_id = r.property_id
+GROUP BY p.property_id, p.name, p.location
+HAVING AVG(r.rating) > 4.0
+ORDER BY avg_rating DESC;
+
+-- Test Query 4: User booking statistics by role
+EXPLAIN ANALYZE
+SELECT u.user_id, u.first_name, u.last_name, u.role,
+       COUNT(b.booking_id) as total_bookings,
+       SUM(b.total_price) as total_spent
+FROM "User" u 
+LEFT JOIN Booking b ON u.user_id = b.user_id 
+WHERE u.role = 'guest'
+AND u.created_at >= '2023-01-01'
+GROUP BY u.user_id, u.first_name, u.last_name, u.role
+ORDER BY total_bookings DESC;
+
+-- Test Query 5: Recent bookings with property details
+EXPLAIN ANALYZE
+SELECT b.booking_id, b.start_date, b.status,
+       p.name as property_name, p.location,
+       u.first_name || ' ' || u.last_name as guest_name
+FROM Booking b
+INNER JOIN Property p ON b.property_id = p.property_id
+INNER JOIN "User" u ON b.user_id = u.user_id
+WHERE b.created_at >= CURRENT_DATE - INTERVAL '30 days'
+AND b.status IN ('confirmed', 'pending')
+ORDER BY b.created_at DESC;
+
+-- Test Query 6: Host performance analysis
+EXPLAIN ANALYZE
+SELECT h.user_id, h.first_name, h.last_name,
+       COUNT(DISTINCT p.property_id) as properties_count,
+       COUNT(b.booking_id) as total_bookings,
+       AVG(r.rating) as avg_rating
+FROM "User" h
+INNER JOIN Property p ON h.user_id = p.host_id
+LEFT JOIN Booking b ON p.property_id = b.property_id
+LEFT JOIN Review r ON p.property_id = r.property_id
+WHERE h.role = 'host'
+GROUP BY h.user_id, h.first_name, h.last_name
+HAVING COUNT(b.booking_id) > 5
+ORDER BY total_bookings DESC;
+
+-- =====================================================
+-- INSTRUCTIONS FOR PERFORMANCE TESTING
+-- =====================================================
+-- 1. Run the EXPLAIN ANALYZE queries above BEFORE creating indexes
+-- 2. Note the execution times and query plans
+-- 3. Create the indexes using the CREATE INDEX commands above
+-- 4. Run the SAME EXPLAIN ANALYZE queries AFTER creating indexes
+-- 5. Compare the results:
+--    - Execution time should be significantly reduced
+--    - Scan types should change from Seq Scan to Index Scan
+--    - Cost estimates should be lower
+--    - Rows examined should be fewer
+
+-- =====================================================
+-- PERFORMANCE MONITORING QUERIES
+-- =====================================================
+-- Use these queries to monitor index usage and performance
+
+-- Check index usage statistics
+SELECT schemaname, tablename, indexname, idx_scan, idx_tup_read, idx_tup_fetch
+FROM pg_stat_user_indexes
+WHERE idx_scan > 0
+ORDER BY idx_scan DESC;
+
+-- Find unused indexes
+SELECT schemaname, tablename, indexname, idx_scan
+FROM pg_stat_user_indexes
+WHERE idx_scan = 0
+AND indexname NOT LIKE 'pk_%';
+
+-- Check table and index sizes
+SELECT 
+    tablename,
+    pg_size_pretty(pg_total_relation_size(tablename::regclass)) as total_size,
+    pg_size_pretty(pg_relation_size(tablename::regclass)) as table_size,
+    pg_size_pretty(pg_total_relation_size(tablename::regclass) - pg_relation_size(tablename::regclass)) as index_size
+FROM pg_tables 
+WHERE schemaname = 'public';

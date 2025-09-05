@@ -114,55 +114,76 @@ WHERE rating >= 4;
 Run these test queries with EXPLAIN ANALYZE:
 
 ```sql
--- Query 1: Find bookings by user with date range
+-- Query 1: Booking search with date range and status
 EXPLAIN ANALYZE
-SELECT * FROM Booking 
-WHERE user_id = 'some-uuid' 
-AND start_date >= '2024-01-01' 
-AND end_date <= '2024-12-31';
+SELECT b.booking_id, b.start_date, b.end_date, b.total_price, b.status,
+       u.first_name, u.last_name, u.email
+FROM Booking b
+INNER JOIN "User" u ON b.user_id = u.user_id
+WHERE b.start_date >= '2024-01-01' 
+AND b.end_date <= '2024-12-31'
+AND b.status = 'confirmed'
+ORDER BY b.start_date;
 
 -- Query 2: Properties by location and price range
 EXPLAIN ANALYZE
-SELECT * FROM Property 
-WHERE location LIKE '%New York%' 
-AND pricepernight BETWEEN 100 AND 300
-ORDER BY pricepernight;
+SELECT p.property_id, p.name, p.location, p.pricepernight,
+       h.first_name || ' ' || h.last_name AS host_name
+FROM Property p
+INNER JOIN "User" h ON p.host_id = h.user_id
+WHERE p.location LIKE '%New York%' 
+AND p.pricepernight BETWEEN 100 AND 300
+ORDER BY p.pricepernight;
 
--- Query 3: Average rating per property
+-- Query 3: Properties with high average ratings
 EXPLAIN ANALYZE
-SELECT property_id, AVG(rating) as avg_rating
-FROM Review 
-GROUP BY property_id 
-HAVING AVG(rating) > 4.0;
+SELECT p.property_id, p.name, p.location,
+       AVG(r.rating) as avg_rating,
+       COUNT(r.review_id) as review_count
+FROM Property p
+INNER JOIN Review r ON p.property_id = r.property_id
+GROUP BY p.property_id, p.name, p.location
+HAVING AVG(r.rating) > 4.0
+ORDER BY avg_rating DESC;
 
--- Query 4: User booking count
+-- Query 4: User booking statistics by role
 EXPLAIN ANALYZE
-SELECT u.user_id, u.first_name, COUNT(b.booking_id) as booking_count
+SELECT u.user_id, u.first_name, u.last_name, u.role,
+       COUNT(b.booking_id) as total_bookings,
+       SUM(b.total_price) as total_spent
 FROM "User" u 
 LEFT JOIN Booking b ON u.user_id = b.user_id 
 WHERE u.role = 'guest'
-GROUP BY u.user_id, u.first_name
-ORDER BY booking_count DESC;
+AND u.created_at >= '2023-01-01'
+GROUP BY u.user_id, u.first_name, u.last_name, u.role
+ORDER BY total_bookings DESC;
 
--- Query 5: Properties with recent bookings
+-- Query 5: Recent bookings with property details
 EXPLAIN ANALYZE
-SELECT DISTINCT p.property_id, p.name, p.location
-FROM Property p
-INNER JOIN Booking b ON p.property_id = b.property_id
+SELECT b.booking_id, b.start_date, b.status,
+       p.name as property_name, p.location,
+       u.first_name || ' ' || u.last_name as guest_name
+FROM Booking b
+INNER JOIN Property p ON b.property_id = p.property_id
+INNER JOIN "User" u ON b.user_id = u.user_id
 WHERE b.created_at >= CURRENT_DATE - INTERVAL '30 days'
-AND b.status = 'confirmed'
-ORDER BY p.name;
+AND b.status IN ('confirmed', 'pending')
+ORDER BY b.created_at DESC;
 
--- Query 6: Most active hosts
+-- Query 6: Host performance analysis
 EXPLAIN ANALYZE
-SELECT h.user_id, h.first_name, h.last_name, COUNT(b.booking_id) as total_bookings
+SELECT h.user_id, h.first_name, h.last_name,
+       COUNT(DISTINCT p.property_id) as properties_count,
+       COUNT(b.booking_id) as total_bookings,
+       AVG(r.rating) as avg_rating
 FROM "User" h
 INNER JOIN Property p ON h.user_id = p.host_id
-INNER JOIN Booking b ON p.property_id = b.property_id
+LEFT JOIN Booking b ON p.property_id = b.property_id
+LEFT JOIN Review r ON p.property_id = r.property_id
 WHERE h.role = 'host'
 GROUP BY h.user_id, h.first_name, h.last_name
-ORDER BY total_bookings DESC
-LIMIT 10;
+HAVING COUNT(b.booking_id) > 5
+ORDER BY total_bookings DESC;
 ```
 
 ### After Adding Indexes
@@ -171,6 +192,50 @@ Re-run the same queries and compare:
 - **Scan type**: Should change from Seq Scan to Index Scan
 - **Cost estimates**: Should be lower
 - **Rows examined**: Should be fewer due to index filtering
+
+### Step-by-Step Testing Process
+
+1. **Baseline Measurement**
+   ```sql
+   -- Clear any cached query plans
+   DISCARD PLANS;
+   
+   -- Run each test query 3 times and record average execution time
+   -- Note the query plan details from EXPLAIN ANALYZE output
+   ```
+
+2. **Create Indexes**
+   ```sql
+   -- Execute all CREATE INDEX commands from database_index.sql
+   -- Monitor index creation progress for large tables
+   ```
+
+3. **Update Statistics**
+   ```sql
+   -- Ensure query planner has current statistics
+   ANALYZE "User";
+   ANALYZE Booking;
+   ANALYZE Property;
+   ANALYZE Review;
+   ```
+
+4. **Post-Index Measurement**
+   ```sql
+   -- Clear cached plans to force re-planning
+   DISCARD PLANS;
+   
+   -- Re-run the same test queries
+   -- Compare results with baseline measurements
+   ```
+
+5. **Verify Index Usage**
+   ```sql
+   -- Check that indexes are being used
+   SELECT schemaname, tablename, indexname, idx_scan
+   FROM pg_stat_user_indexes
+   WHERE idx_scan > 0
+   ORDER BY idx_scan DESC;
+   ```
 
 ### Expected Performance Improvements
 
